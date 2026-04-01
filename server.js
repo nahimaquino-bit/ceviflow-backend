@@ -102,6 +102,48 @@ app.delete('/api/dishes/:id', async (req, res) => {
   }
 });
 
+// --- SALES ROUTES (SUPABASE) ---
+
+// Get all sales
+app.get('/api/sales', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('sales')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create a new sale
+app.post('/api/sales', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('sales')
+      .insert([
+        {
+          items: req.body.items,
+          subtotal: parseFloat(req.body.subtotal),
+          togo_fee: parseFloat(req.body.togo_fee),
+          total: parseFloat(req.body.total),
+          payment_method: req.body.payment_method || 'Efectivo',
+          amount_paid: parseFloat(req.body.amount_paid) || 0,
+          change_given: parseFloat(req.body.change_given) || 0
+        }
+      ])
+      .select();
+
+    if (error) throw error;
+    res.status(201).json(data[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.listen(PORT, () => {
