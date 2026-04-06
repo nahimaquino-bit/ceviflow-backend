@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const compression = require('compression');
+const helmet = require('helmet');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
@@ -19,6 +21,22 @@ if (!supabaseUrl || !supabaseKey || supabaseUrl === 'YOUR_SUPABASE_PROJECT_URL')
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// --- CACHE SYSTEM ---
+let dishesCache = {
+  data: null,
+  lastFetched: 0,
+  TTL: 5 * 60 * 1000 // 5 minutes cache
+};
+
+const invalidateCache = () => {
+  console.log('🔄 Cache invalidated');
+  dishesCache.data = null;
+  dishesCache.lastFetched = 0;
+};
+
+// Middlewares
+app.use(helmet()); // Basic security headers
+app.use(compression()); // Gzip compression
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -29,15 +47,25 @@ app.use(bodyParser.json());
 
 // --- DISHES ROUTES (SUPABASE) ---
 
-// Get all dishes
+// Get all dishes (with cache)
 app.get('/api/dishes', async (req, res) => {
   try {
+    const now = Date.now();
+    if (dishesCache.data && (now - dishesCache.lastFetched < dishesCache.TTL)) {
+      return res.json(dishesCache.data);
+    }
+
     const { data, error } = await supabase
       .from('dishes')
       .select('*')
       .order('id', { ascending: true });
     
     if (error) throw error;
+    
+    // Update cache
+    dishesCache.data = data;
+    dishesCache.lastFetched = now;
+    
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -59,6 +87,8 @@ app.post('/api/dishes', async (req, res) => {
       .select();
     
     if (error) throw error;
+    
+    invalidateCache(); // Invalidate cache on change
     res.status(201).json(data[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -80,6 +110,8 @@ app.put('/api/dishes/:id', async (req, res) => {
       .select();
 
     if (error) throw error;
+    
+    invalidateCache(); // Invalidate cache on change
     res.json(data[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -96,6 +128,8 @@ app.delete('/api/dishes/:id', async (req, res) => {
       .eq('id', id);
 
     if (error) throw error;
+    
+    invalidateCache(); // Invalidate cache on change
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -156,5 +190,6 @@ app.post('/api/sales', async (req, res) => {
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.listen(PORT, () => {
-  console.log(`CeviFlow Backend (Supabase) running on port ${PORT}`);
+  console.log(`CeviFlow Backend (Supabase + Cache) running on port ${PORT}`);
 });
+
